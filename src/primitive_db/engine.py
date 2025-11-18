@@ -1,9 +1,22 @@
-import prompt
 import shlex
-from src.primitive_db.core import create_table, drop_table, insert, select, update, delete
-from src.primitive_db.utils import save_metadata, load_metadata, load_table_data, save_table_data
-from src.primitive_db.parser import parse_command
+
+import prompt
 from prettytable import PrettyTable
+
+from src.primitive_db.core import (
+    cached_select,
+    create_table,
+    delete,
+    drop_table,
+    info,
+    insert,
+    select_cache,
+    update,
+)
+from src.primitive_db.parser import parse_command
+from src.primitive_db.utils import load_metadata, save_metadata
+
+
 def print_help():
     """Prints the help message for the current mode."""
    
@@ -12,6 +25,20 @@ def print_help():
     print("<command> create_table <имя_таблицы> <столбец1:тип> .. - создать таблицу")
     print("<command> list_tables - показать список всех таблиц")
     print("<command> drop_table <имя_таблицы> - удалить таблицу")
+    print(
+        "<command> insert into <имя_таблицы> "
+        "values (<значение1>, <значение2>, ...) - создать запись.")
+    print(
+        "<command> select from <имя_таблицы> "
+        "where <столбец> = <значение> - прочитать записи по условию.")
+    print("<command> select from <имя_таблицы> - прочитать все записи.")
+    print(
+        "<command> update <имя_таблицы> set <столбец1> = <новое_значение1> "
+        "where <столбец_условия> = <значение_условия> - обновить запись.")
+    print(
+        "<command> delete from <имя_таблицы> "
+        "where <столбец> = <значение> - удалить запись.")
+    print("<command> info <имя_таблицы> - вывести информацию о таблице.")
     
     print("\nОбщие команды:")
     print("<command> exit - выход из программы")
@@ -41,17 +68,16 @@ def run():
                 except Exception:
                     print(Exception)
             case 'insert':
-                try:
-                    values = ' '.join(args[4:]).strip('()').split(", ")
-                    table_name = args[2]
-                    save_table_data(table_name, insert(metadata, table_name, values))
-                except Exception as e:
-                    raise e
+                values = ' '.join(args[4:]).strip('()').split(", ")
+                table_name = args[2]
+                insert(metadata, table_name, values)
+                invalidate_cache_for(table_name)
             case 'select':
                 where_clause = None
                 if len(args) > 3:
                     where_clause = ' '.join(args[4:])
-                filtered_data = select(load_table_data(args[2]), parse_command(where_clause))
+                table_name = args[2]
+                filtered_data = cached_select(table_name, parse_command(where_clause))
                 table = PrettyTable()
                 table.field_names = list(filtered_data[0].keys())
                 for row in filtered_data:
@@ -61,23 +87,29 @@ def run():
                 set_clause = ' '.join(args[3:6])
                 where_clause = ' '.join(args[7:])
                 table_name = args[1]
-                data, ids = update(load_table_data(table_name), parse_command(set_clause), parse_command(where_clause))
-                save_table_data(table_name, data)
+                ids = update(
+                    table_name, 
+                    parse_command(set_clause), 
+                    parse_command(where_clause))
+                invalidate_cache_for(table_name)
                 for ID in ids:
                     print(f'Запись с ID={ID} в таблице {table_name} успешно обновлена.')
             case 'delete':
                 where_clause = ' '.join(args[4:])
                 table_name = args[2]
-                data, ids = delete(load_table_data(table_name), parse_command(where_clause))
-                save_table_data(table_name, data)
+                ids = delete(table_name, parse_command(where_clause))
+                invalidate_cache_for(table_name)
                 for ID in ids:
                     print(f'Запись с ID={ID} успешно удалена из таблицы {table_name}.')
             case 'info':
-                table_name = args[1]
-                data_len = len(load_table_data(table_name))
-                columns = metadata[table_name]
-                print(f'Таблица: {table_name}\nСтолбцы: {', '.join(columns)}\nКоличество записей: {data_len}')
+                info(args, metadata)
             case _:
                 print(f'Функции {args[0]} нет. Попробуйте снова.')
 
 
+
+def invalidate_cache_for(table_name):
+    old_cache = select_cache.__closure__[0].cell_contents
+    keys_to_remove = [k for k in old_cache if f'"table": "{table_name}"' in k]
+    for k in keys_to_remove:
+        del old_cache[k]

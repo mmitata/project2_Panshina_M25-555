@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "project2-panshina-tatiana"
 version = "0.1.0"
-description = ""
+description = "Primitive data base"
 authors = ["Tatiana <mmitataa@yandex.ru>"]
 readme = "README.md"
  packages = [

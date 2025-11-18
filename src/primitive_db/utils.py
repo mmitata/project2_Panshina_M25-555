@@ -1,13 +1,16 @@
 import json
 
+
 def load_metadata(filepath):
     try:
         with open(filepath, 'r', encoding = 'utf-8') as file:
             data = json.load(file)  
             return data  
-    except:
+    except FileNotFoundError:
         return {}
-        raise FileNotFoundError
+    except Exception as e:
+        print(f"Error: {e}")
+        raise
         
 def save_metadata(filepath, data):
     with open(filepath, 'w', encoding = 'utf-8') as file:
@@ -19,7 +22,7 @@ def load_table_data(table_name):
         with open(filepath, 'r', encoding = 'utf-8') as file:
             data = json.load(file)  
             return data  
-    except:
+    except Exception:  
         return []
 
 def save_table_data(table_name, data):
